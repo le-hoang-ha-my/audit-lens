@@ -2,9 +2,7 @@ from datasets import load_dataset
 from typing import List, Dict
 import json
 
-dataset_name = "AiresPucrs/stanford-encyclopedia-philosophy"
-
-def load_data(dataset_name: str, split: str = 'train') -> List[Dict]:
+def load_data(dataset_name: str = "AiresPucrs/stanford-encyclopedia-philosophy", split: str = 'train') -> List[Dict]:
     ds = load_dataset(dataset_name, split=split)
     
     documents = []
@@ -20,4 +18,5 @@ def load_data(dataset_name: str, split: str = 'train') -> List[Dict]:
     
     return documents
 
-g
+if __name__ == "__main__":
+    data = load_data()
