@@ -6,15 +6,13 @@ from tqdm import tqdm
 
 
 class Qwen3Embedder:
-    """
-    Generates embeddings.
-    """
-
-    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B", device: str = None):
+    def __init__(
+        self,
+        model_name: str = "Qwen/Qwen3-0.6B",
+        device: str = 'cpu',
+    ):
         self.device = device or (
             'cuda' if torch.cuda.is_available() else 'cpu')
-
-        print(f"Using {self.device}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
@@ -23,11 +21,12 @@ class Qwen3Embedder:
 
         self.model = AutoModel.from_pretrained(
             model_name,
-            trust_remote_code=True
+            trust_remote_code=True,
+            dtype=torch.float32
         ).to(self.device)
 
         self.model.eval()
-        self.hidden_size = self.model.config.hidden_size  # 1024 for Qwen3-0.6B
+        self.hidden_size = self.model.config.hidden_size
 
     def mean_pooling(
         self,
@@ -35,12 +34,11 @@ class Qwen3Embedder:
         attention_mask: torch.Tensor
     ) -> torch.Tensor:
         """
-        Convert token embeddings into sentence embedding via mean pooling.
+        Convert token embeddings into sentence embedding.
         """
         token_embeddings = model_output[0]  # (batch, seq_len, hidden_size)
         mask_expanded = attention_mask.unsqueeze(
             -1).expand(token_embeddings.size()).float()
-
         sum_embeddings = torch.sum(token_embeddings * mask_expanded, dim=1)
         sum_mask = torch.clamp(mask_expanded.sum(dim=1), min=1e-9)
 
@@ -49,20 +47,23 @@ class Qwen3Embedder:
     def encode(
         self,
         texts: List[str],
-        batch_size: int = 8,
+        batch_size: int = 32,
         show_progress: bool = True,
         normalize: bool = True
     ) -> np.ndarray:
         """
         Generate embeddings for texts.
+        Returns embeddings (len(texts), hidden_size)
         """
-        embeddings_list = []
-        
-        batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
-        
+        all_embeddings = []
+
+        # Create batches
+        batches = [texts[i:i + batch_size]
+                   for i in range(0, len(texts), batch_size)]
+
         if show_progress:
             batches = tqdm(batches, desc="Generating embeddings")
-        
+
         with torch.no_grad():
             for batch in batches:
                 encoded = self.tokenizer(
@@ -70,17 +71,15 @@ class Qwen3Embedder:
                     padding=True,
                     return_tensors='pt'
                 ).to(self.device)
-                
+
                 model_output = self.model(**encoded)
-                
-                embeddings = self.mean_pooling(model_output, encoded['attention_mask'])
-                
+                embeddings = self.mean_pooling(
+                    model_output, encoded['attention_mask'])
                 if normalize:
                     embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-                
-                embeddings_list.append(embeddings.cpu().numpy())
-        
-        return np.concatenate(embeddings_list, axis=0)
+                all_embeddings.append(embeddings.cpu().numpy())
+
+        return np.concatenate(all_embeddings, axis=0)
 
     def get_dimension(self) -> int:
         return self.hidden_size
@@ -89,9 +88,11 @@ class Qwen3Embedder:
 if __name__ == "__main__":
     embedder = Qwen3Embedder()
 
-    texts = ["What is the categorical imperative?",
-             "Kant's ethics focuses on duty and moral law."]
+    texts = [
+        "What is the categorical imperative?",
+        "Kant's ethics focuses on duty and moral law."
+    ]
 
     embeddings = embedder.encode(texts, show_progress=False)
     print(f"Embeddings shape: {embeddings.shape}")  # (2, 1024)
-    print(f"Normalized? {np.allclose(np.linalg.norm(embeddings, axis=1), 1.0)}")
+    print(f"Normalized?: {np.allclose(np.linalg.norm(embeddings, axis=1), 1.0)}")
